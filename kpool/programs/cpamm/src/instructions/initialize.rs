@@ -73,6 +73,10 @@ pub struct InitializePool<'info> {
 
 pub fn handle_initialize_pool(ctx: Context<InitializePool>) -> Result<()> {
     require!(
+        ctx.accounts.mint_a.key() != ctx.accounts.mint_b.key(),
+        CpammError::IdenticalMints
+    );
+    require!(
         ctx.accounts.mint_a.key() < ctx.accounts.mint_b.key(),
         CpammError::InvalidTokenOrder
     );

@@ -28,4 +28,6 @@ pub enum CpammError {
     InvalidInputMint,
     #[msg("Pool has no liquidity")]
     EmptyPool,
+    #[msg("Token mints must be different")]
+    IdenticalMints,
 }
