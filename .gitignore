@@ -1,0 +1,18 @@
+# Build artifacts
+**/target/
+**/.anchor/
+
+# Dependencies
+**/node_modules/
+
+# Keypairs (don't commit secrets)
+**/target/deploy/*-keypair.json
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
