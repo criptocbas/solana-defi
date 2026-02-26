@@ -31,6 +31,24 @@ cd klend && anchor build
 cd klend/tests-litesvm && cargo test
 ```
 
+### kvault — Yield Vault
+
+ERC-4626/Yearn V3-style yield vault. Users deposit USDC and receive fungible SPL share tokens. An admin allocates idle funds into klend via CPI to earn lending interest. Yield is harvested periodically, and performance + management fees are extracted through dilutive share minting.
+
+- ERC-4626 share math with virtual offset for inflation attack defense
+- Dilutive fee share minting (Yearn V3 pattern) — no token transfers needed for fees
+- CPI into klend for deposit/withdraw of funds
+- Emergency halt toggle (blocks deposits, withdrawals always allowed)
+- Cached `total_invested` updated from klend state on harvest
+
+**Instructions**: `init_vault`, `deposit`, `withdraw`, `allocate`, `deallocate`, `harvest`, `set_halt`
+
+```bash
+cd klend && anchor build          # klend must be built first (CPI dependency)
+cd kvault && anchor build
+cd kvault/tests-litesvm && cargo test
+```
+
 ## Research
 
 The `research/` directory contains 9 deep-dive documents (~74,000 words) covering DeFi fundamentals, AMMs, lending, yield sources, stablecoins, the Solana ecosystem, key papers and math, protocol design patterns, and advanced strategies.
