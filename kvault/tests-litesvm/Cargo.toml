@@ -1,0 +1,15 @@
+[package]
+name = "kvault-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+litesvm = "0.7"
+solana-sdk = "2"
+spl-token = "7"
+spl-associated-token-account = "6"
+kvault = { path = "../programs/kvault", features = ["no-entrypoint"] }
+klend = { path = "../../klend/programs/klend", features = ["no-entrypoint"] }
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = "0.32.1"
