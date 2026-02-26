@@ -52,7 +52,8 @@ pub fn handle_repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
     // Check reserve freshness
     let clock = Clock::get()?;
     require!(
-        clock.unix_timestamp.saturating_sub(reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
     );
 
@@ -103,6 +104,10 @@ pub fn handle_repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
     reserve.borrowed_liquidity = reserve
         .borrowed_liquidity
         .saturating_sub(repay_amount);
+    reserve.deposited_liquidity = reserve
+        .deposited_liquidity
+        .checked_add(repay_amount)
+        .ok_or(KlendError::MathOverflow)?;
 
     Ok(())
 }

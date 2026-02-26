@@ -58,9 +58,9 @@ impl Reserve {
             .saturating_sub(self.accumulated_protocol_fees)
     }
 
-    /// Cash available in vault (deposited - borrowed)
+    /// Cash available in vault (deposited_liquidity now tracks physical cash)
     pub fn available_liquidity(&self) -> u64 {
-        self.deposited_liquidity.saturating_sub(self.borrowed_liquidity)
+        self.deposited_liquidity
     }
 }
 

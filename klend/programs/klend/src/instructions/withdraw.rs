@@ -64,7 +64,8 @@ pub fn handle_withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
     // Check reserve freshness
     let clock = Clock::get()?;
     require!(
-        clock.unix_timestamp.saturating_sub(reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
     );
 
@@ -75,8 +76,9 @@ pub fn handle_withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
         reserve.total_assets(),
     )?;
 
+    // Check against actual vault balance (more accurate than available_liquidity() after interest/repay)
     require!(
-        underlying <= reserve.available_liquidity(),
+        underlying <= ctx.accounts.token_vault.amount,
         KlendError::InsufficientLiquidity
     );
 

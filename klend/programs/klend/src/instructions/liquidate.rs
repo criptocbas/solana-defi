@@ -84,12 +84,40 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, amount: u64) -> Result<()> {
 
     // Check reserves freshness
     require!(
-        clock.unix_timestamp.saturating_sub(debt_reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(debt_reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
     );
     require!(
-        clock.unix_timestamp.saturating_sub(collateral_reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(collateral_reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
+    );
+
+    // Validate oracle mints match reserves
+    require!(
+        ctx.accounts.debt_oracle.token_mint == debt_reserve.token_mint,
+        KlendError::InvalidOracle
+    );
+    require!(
+        ctx.accounts.collateral_oracle.token_mint == collateral_reserve.token_mint,
+        KlendError::InvalidOracle
+    );
+
+    // Check oracle staleness
+    let debt_oracle_staleness = clock
+        .unix_timestamp
+        .saturating_sub(ctx.accounts.debt_oracle.timestamp) as u64;
+    require!(
+        debt_oracle_staleness <= debt_reserve.config.oracle_max_staleness,
+        KlendError::OracleStale
+    );
+    let collateral_oracle_staleness = clock
+        .unix_timestamp
+        .saturating_sub(ctx.accounts.collateral_oracle.timestamp) as u64;
+    require!(
+        collateral_oracle_staleness <= collateral_reserve.config.oracle_max_staleness,
+        KlendError::OracleStale
     );
 
     let obligation = &ctx.accounts.obligation;
@@ -144,8 +172,8 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, amount: u64) -> Result<()> {
         .checked_mul(CLOSE_FACTOR_BPS as u128)
         .ok_or(KlendError::MathOverflow)?
         / (BPS_SCALE as u128);
-    let repay_amount = amount.min(max_repay as u64).min(current_debt);
     require!(amount <= max_repay as u64, KlendError::CloseFactorExceeded);
+    let repay_amount = amount.min(current_debt);
 
     // Compute collateral to seize
     let collateral_seized = math::liquidation_collateral_seized(
@@ -199,6 +227,10 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, amount: u64) -> Result<()> {
     debt_reserve.borrowed_liquidity = debt_reserve
         .borrowed_liquidity
         .saturating_sub(repay_amount);
+    debt_reserve.deposited_liquidity = debt_reserve
+        .deposited_liquidity
+        .checked_add(repay_amount)
+        .ok_or(KlendError::MathOverflow)?;
 
     // Update collateral reserve
     let collateral_reserve = &mut ctx.accounts.collateral_reserve;

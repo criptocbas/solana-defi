@@ -61,18 +61,19 @@ pub fn handle_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     // Check reserve freshness (must be refreshed in same slot/recent)
     let clock = Clock::get()?;
     require!(
-        clock.unix_timestamp.saturating_sub(reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
     );
 
-    // Check supply cap
-    let new_deposited = reserve
-        .deposited_liquidity
-        .checked_add(amount)
-        .ok_or(KlendError::MathOverflow)?;
+    // Check supply cap (use total_assets to measure total pool value)
     if reserve.config.supply_cap > 0 {
+        let new_total = reserve
+            .total_assets()
+            .checked_add(amount)
+            .ok_or(KlendError::MathOverflow)?;
         require!(
-            new_deposited <= reserve.config.supply_cap,
+            new_total <= reserve.config.supply_cap,
             KlendError::SupplyCapExceeded
         );
     }
@@ -95,7 +96,10 @@ pub fn handle_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 
     // Update reserve
     let reserve = &mut ctx.accounts.reserve;
-    reserve.deposited_liquidity = new_deposited;
+    reserve.deposited_liquidity = reserve
+        .deposited_liquidity
+        .checked_add(amount)
+        .ok_or(KlendError::MathOverflow)?;
     reserve.total_shares = reserve
         .total_shares
         .checked_add(shares)

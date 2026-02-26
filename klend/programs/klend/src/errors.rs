@@ -48,4 +48,6 @@ pub enum KlendError {
     ReserveStale,
     #[msg("Insufficient vault liquidity")]
     InsufficientLiquidity,
+    #[msg("Oracle mint does not match reserve token mint")]
+    InvalidOracle,
 }

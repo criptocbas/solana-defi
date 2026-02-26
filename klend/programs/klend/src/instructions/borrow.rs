@@ -77,12 +77,40 @@ pub fn handle_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
 
     // Check reserve freshness
     require!(
-        clock.unix_timestamp.saturating_sub(borrow_reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(borrow_reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
     );
     require!(
-        clock.unix_timestamp.saturating_sub(collateral_reserve.last_update_timestamp) <= 2,
+        clock.unix_timestamp.saturating_sub(collateral_reserve.last_update_timestamp)
+            <= RESERVE_FRESHNESS_SECONDS,
         KlendError::ReserveStale
+    );
+
+    // Validate oracle mints match reserves
+    require!(
+        ctx.accounts.borrow_oracle.token_mint == borrow_reserve.token_mint,
+        KlendError::InvalidOracle
+    );
+    require!(
+        ctx.accounts.collateral_oracle.token_mint == collateral_reserve.token_mint,
+        KlendError::InvalidOracle
+    );
+
+    // Check oracle staleness
+    let borrow_oracle_staleness = clock
+        .unix_timestamp
+        .saturating_sub(ctx.accounts.borrow_oracle.timestamp) as u64;
+    require!(
+        borrow_oracle_staleness <= borrow_reserve.config.oracle_max_staleness,
+        KlendError::OracleStale
+    );
+    let collateral_oracle_staleness = clock
+        .unix_timestamp
+        .saturating_sub(ctx.accounts.collateral_oracle.timestamp) as u64;
+    require!(
+        collateral_oracle_staleness <= collateral_reserve.config.oracle_max_staleness,
+        KlendError::OracleStale
     );
 
     // Check borrow cap
@@ -186,6 +214,10 @@ pub fn handle_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
     // Update borrow reserve
     let borrow_reserve = &mut ctx.accounts.borrow_reserve;
     borrow_reserve.borrowed_liquidity = new_borrowed;
+    borrow_reserve.deposited_liquidity = borrow_reserve
+        .deposited_liquidity
+        .checked_sub(amount)
+        .ok_or(KlendError::MathUnderflow)?;
 
     // Update obligation - add/update borrow entry
     let obligation = &mut ctx.accounts.obligation;

@@ -18,6 +18,9 @@ pub const VIRTUAL_ASSETS: u128 = 1;
 /// Liquidation
 pub const CLOSE_FACTOR_BPS: u64 = 5_000; // 50%
 
+/// Reserve freshness threshold (seconds) -- reserve must be refreshed within this window
+pub const RESERVE_FRESHNESS_SECONDS: i64 = 2;
+
 /// Caps (max entries per obligation)
 pub const MAX_DEPOSITS: usize = 5;
 pub const MAX_BORROWS: usize = 5;
