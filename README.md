@@ -50,6 +50,24 @@ cd kclmm && anchor build
 cd kclmm/tests-litesvm && cargo test
 ```
 
+### krouter — DEX Aggregator/Router
+
+Jupiter-style stateless DEX router that composes kpool and kclmm. Routes swaps through the best pool, chains multi-hop swaps (A→B→C), and splits input across pools to minimize price impact. All routing decisions happen off-chain; the on-chain program executes pre-computed routes via CPI and enforces end-to-end slippage protection.
+
+- Direct swaps through kpool or kclmm via CPI
+- Two-hop routing through any combination of pool types (4 combinations)
+- Split routing across two pools for the same pair
+- `remaining_accounts`-based leg encoding with `LegDescriptor` per leg
+- Balance reload pattern for measuring intermediate/final output amounts
+- Single slippage check at the router level (underlying programs get `min_out = 0`)
+
+**Instructions**: `swap_kpool`, `swap_kclmm`, `route_two_hop`, `route_split`
+
+```bash
+cd krouter && anchor build
+cd krouter/tests-litesvm && cargo test
+```
+
 ### kvault — Yield Vault
 
 ERC-4626/Yearn V3-style yield vault. Users deposit USDC and receive fungible SPL share tokens. An admin allocates idle funds into klend via CPI to earn lending interest. Yield is harvested periodically, and performance + management fees are extracted through dilutive share minting.
