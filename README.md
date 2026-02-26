@@ -31,6 +31,25 @@ cd klend && anchor build
 cd klend/tests-litesvm && cargo test
 ```
 
+### kclmm — Concentrated Liquidity AMM
+
+Uniswap V3/Orca Whirlpool-style concentrated liquidity AMM. LPs provide liquidity in custom price ranges for dramatically higher capital efficiency. Swaps traverse tick boundaries, updating active liquidity at each crossing.
+
+- Q64.64 fixed-point arithmetic with manual U256 intermediates
+- Tick system: `P(i) = 1.0001^i`, binary exponentiation with precomputed table
+- Zero-copy tick arrays (64 ticks each, u64 bitmap for initialized tracking)
+- Swap loop with tick traversal via `remaining_accounts` (up to 3 arrays, max 20 crossings)
+- Per-position fee tracking with wrapping subtraction (Uniswap V3 pattern)
+- Fee tiers: 0.01%, 0.05%, 0.30%, 1.00% with corresponding tick spacings
+- Protocol fee: 10% of swap fees
+
+**Instructions**: `init_pool`, `init_tick_array`, `open_position`, `add_liquidity`, `remove_liquidity`, `collect_fees`, `swap`, `close_position`
+
+```bash
+cd kclmm && anchor build
+cd kclmm/tests-litesvm && cargo test
+```
+
 ### kvault — Yield Vault
 
 ERC-4626/Yearn V3-style yield vault. Users deposit USDC and receive fungible SPL share tokens. An admin allocates idle funds into klend via CPI to earn lending interest. Yield is harvested periodically, and performance + management fees are extracted through dilutive share minting.
