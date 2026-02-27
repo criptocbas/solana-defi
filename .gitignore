@@ -5,6 +5,9 @@
 # Dependencies
 **/node_modules/
 
+# Lock files (library crates, not binary apps)
+**/Cargo.lock
+
 # Keypairs (don't commit secrets)
 **/target/deploy/*-keypair.json
 
