@@ -105,6 +105,24 @@ cd kvault && anchor build
 cd kvault/tests-litesvm && cargo test
 ```
 
+### kusd — CDP Stablecoin
+
+MakerDAO/Liquity-style CDP (collateralized debt position) stablecoin. Users deposit SOL collateral, mint kUSD stablecoins against it (up to a configurable max LTV), and face liquidation if undercollateralized. kUSD is minted from nothing and burned on repayment — no lending pool involved.
+
+- Self-contained program with its own MockOracle (no CPI dependencies)
+- Debt tracked as shares with cumulative fee index for stability fee accrual
+- kUSD = $1 with 6 decimals (PRICE_SCALE and token decimals cancel, simplifying all math)
+- Health factor, 50% close factor, liquidation bonus
+- Configurable per-vault: max LTV, liquidation threshold, bonus, stability fee, debt ceiling
+- Admin halt toggle (blocks minting; repay/withdraw/liquidate always allowed)
+
+**Instructions**: `init_mock_oracle`, `update_mock_oracle`, `init_vault`, `open_position`, `deposit_collateral`, `mint_kusd`, `repay_kusd`, `withdraw_collateral`, `liquidate`, `accrue_fees`, `set_halt`
+
+```bash
+cd kusd && anchor build
+cd kusd/tests-litesvm && cargo test
+```
+
 ## Research
 
 The `research/` directory contains 9 deep-dive documents (~74,000 words) covering DeFi fundamentals, AMMs, lending, yield sources, stablecoins, the Solana ecosystem, key papers and math, protocol design patterns, and advanced strategies.
