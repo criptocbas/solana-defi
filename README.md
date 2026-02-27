@@ -68,6 +68,25 @@ cd krouter && anchor build
 cd krouter/tests-litesvm && cargo test
 ```
 
+### klev — Leveraged Yield Vault
+
+Kamino Multiply-style leveraged yield vault that composes klend and kpool. Users deposit SOL and receive share tokens. An admin loops: deposit SOL into klend as collateral → borrow USDC → swap USDC→SOL via kpool → deposit SOL back, amplifying SOL exposure and supply yield by 2-3x.
+
+- CPI into both klend (deposit/borrow/withdraw/repay) and cpamm (swap) in a single instruction
+- ERC-4626 share math with virtual offset, dilutive fee share minting
+- Leverage ratio and max leverage safety checks
+- Cached net equity (collateral − debt in collateral terms) updated at harvest via oracle reads
+- Performance fee on yield + time-weighted management fee on total assets
+
+**Instructions**: `init_vault`, `deposit`, `withdraw`, `leverage_up`, `deleverage`, `harvest`, `set_halt`
+
+```bash
+cd klend && anchor build          # klend must be built first (CPI dependency)
+cd kpool && anchor build          # kpool must be built first (CPI dependency)
+cd klev && anchor build
+cd klev/tests-litesvm && cargo test
+```
+
 ### kvault — Yield Vault
 
 ERC-4626/Yearn V3-style yield vault. Users deposit USDC and receive fungible SPL share tokens. An admin allocates idle funds into klend via CPI to earn lending interest. Yield is harvested periodically, and performance + management fees are extracted through dilutive share minting.
