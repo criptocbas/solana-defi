@@ -3,6 +3,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::constants::*;
 use crate::errors::KlendError;
+use crate::instructions::health::{self, WeightMode};
 use crate::math;
 use crate::state::{LendingMarket, MockOracle, Obligation, Reserve};
 
@@ -24,7 +25,7 @@ pub struct Liquidate<'info> {
         bump = debt_reserve.bump,
         has_one = lending_market,
     )]
-    pub debt_reserve: Account<'info, Reserve>,
+    pub debt_reserve: Box<Account<'info, Reserve>>,
 
     /// The reserve from which collateral is seized
     #[account(
@@ -33,7 +34,7 @@ pub struct Liquidate<'info> {
         bump = collateral_reserve.bump,
         has_one = lending_market,
     )]
-    pub collateral_reserve: Account<'info, Reserve>,
+    pub collateral_reserve: Box<Account<'info, Reserve>>,
 
     /// CHECK: PDA signing authority for collateral vault
     #[account(
@@ -124,31 +125,18 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, amount: u64) -> Result<()> {
     let collateral_oracle = &ctx.accounts.collateral_oracle;
     let debt_oracle = &ctx.accounts.debt_oracle;
 
-    // Compute collateral value
-    let collateral_reserve_key = collateral_reserve.key();
-    let collateral_deposit = obligation
-        .deposits
-        .iter()
-        .find(|d| d.reserve == collateral_reserve_key)
-        .ok_or(KlendError::NoCollateralDeposit)?;
-
-    let collateral_underlying = math::shares_to_underlying(
-        collateral_deposit.shares,
-        collateral_reserve.total_shares,
-        collateral_reserve.total_assets(),
+    // Verify position is unhealthy using full obligation health (HF < 1.0)
+    let lending_market_key = ctx.accounts.lending_market.key();
+    let (_, _, hf) = health::compute_obligation_health(
+        obligation,
+        ctx.remaining_accounts,
+        &lending_market_key,
+        &clock,
+        WeightMode::LiquidationThreshold,
     )?;
+    require!(hf < SCALE, KlendError::PositionHealthy);
 
-    let collateral_value = math::collateral_value_usd(
-        collateral_underlying,
-        collateral_oracle.price,
-        collateral_oracle.decimals,
-    )?;
-    let weighted_collateral = math::weighted_collateral_value(
-        collateral_value,
-        collateral_reserve.config.liquidation_threshold,
-    )?;
-
-    // Compute total debt value
+    // Compute current debt for the specific debt reserve being liquidated
     let debt_reserve_key = debt_reserve.key();
     let borrow_entry = obligation
         .borrows
@@ -156,16 +144,7 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, amount: u64) -> Result<()> {
         .find(|b| b.reserve == debt_reserve_key)
         .ok_or(KlendError::NoBorrowFound)?;
 
-    let current_debt = borrow_entry.current_debt(debt_reserve.cumulative_borrow_index);
-    let total_debt_value = math::collateral_value_usd(
-        current_debt,
-        debt_oracle.price,
-        debt_oracle.decimals,
-    )?;
-
-    // Verify position is unhealthy (HF < 1.0)
-    let hf = math::health_factor(weighted_collateral, total_debt_value)?;
-    require!(hf < SCALE, KlendError::PositionHealthy);
+    let current_debt = borrow_entry.current_debt(debt_reserve.cumulative_borrow_index)?;
 
     // Enforce close factor: max repay = current_debt * CLOSE_FACTOR_BPS / BPS_SCALE
     let max_repay = (current_debt as u128)

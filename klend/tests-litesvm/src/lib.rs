@@ -5,7 +5,7 @@ mod tests {
     use litesvm::LiteSVM;
     use solana_sdk::{
         clock::Clock,
-        instruction::Instruction,
+        instruction::{AccountMeta, Instruction},
         program_pack::Pack,
         pubkey::Pubkey,
         signature::{Keypair, Signer},
@@ -332,25 +332,29 @@ mod tests {
         vault: &Pubkey,
         oracle: &Pubkey,
         shares: u64,
+        extra_accounts: Vec<AccountMeta>,
     ) -> Instruction {
         let (obligation, _) = obligation_pda(lending_market, user);
         let user_token_account = get_associated_token_address(user, token_mint);
 
+        let mut accounts = klend::accounts::Withdraw {
+            user: *user,
+            lending_market: *lending_market,
+            reserve: *reserve,
+            reserve_authority: *reserve_authority,
+            obligation,
+            owner: *user,
+            user_token_account,
+            token_vault: *vault,
+            oracle: *oracle,
+            token_program: spl_token::id(),
+        }
+        .to_account_metas(None);
+        accounts.extend(extra_accounts);
+
         Instruction {
             program_id: program_id(),
-            accounts: klend::accounts::Withdraw {
-                user: *user,
-                lending_market: *lending_market,
-                reserve: *reserve,
-                reserve_authority: *reserve_authority,
-                obligation,
-                owner: *user,
-                user_token_account,
-                token_vault: *vault,
-                oracle: *oracle,
-                token_program: spl_token::id(),
-            }
-            .to_account_metas(None),
+            accounts,
             data: klend::instruction::Withdraw { shares }.data(),
         }
     }
@@ -366,27 +370,31 @@ mod tests {
         borrow_mint: &Pubkey,
         borrow_vault: &Pubkey,
         amount: u64,
+        extra_accounts: Vec<AccountMeta>,
     ) -> Instruction {
         let (obligation, _) = obligation_pda(lending_market, user);
         let user_token_account = get_associated_token_address(user, borrow_mint);
 
+        let mut accounts = klend::accounts::Borrow {
+            user: *user,
+            lending_market: *lending_market,
+            borrow_reserve: *borrow_reserve,
+            borrow_reserve_authority: *borrow_reserve_authority,
+            collateral_reserve: *collateral_reserve,
+            obligation,
+            owner: *user,
+            borrow_oracle: *borrow_oracle,
+            collateral_oracle: *collateral_oracle,
+            user_token_account,
+            token_vault: *borrow_vault,
+            token_program: spl_token::id(),
+        }
+        .to_account_metas(None);
+        accounts.extend(extra_accounts);
+
         Instruction {
             program_id: program_id(),
-            accounts: klend::accounts::Borrow {
-                user: *user,
-                lending_market: *lending_market,
-                borrow_reserve: *borrow_reserve,
-                borrow_reserve_authority: *borrow_reserve_authority,
-                collateral_reserve: *collateral_reserve,
-                obligation,
-                owner: *user,
-                borrow_oracle: *borrow_oracle,
-                collateral_oracle: *collateral_oracle,
-                user_token_account,
-                token_vault: *borrow_vault,
-                token_program: spl_token::id(),
-            }
-            .to_account_metas(None),
+            accounts,
             data: klend::instruction::Borrow { amount }.data(),
         }
     }
@@ -434,32 +442,49 @@ mod tests {
         debt_vault: &Pubkey,
         collateral_vault: &Pubkey,
         amount: u64,
+        extra_accounts: Vec<AccountMeta>,
     ) -> Instruction {
         let (obligation, _) = obligation_pda(lending_market, obligation_owner);
         let liquidator_debt_token = get_associated_token_address(liquidator, debt_mint);
         let liquidator_collateral_token = get_associated_token_address(liquidator, collateral_mint);
 
+        let mut accounts = klend::accounts::Liquidate {
+            liquidator: *liquidator,
+            lending_market: *lending_market,
+            debt_reserve: *debt_reserve,
+            collateral_reserve: *collateral_reserve,
+            collateral_reserve_authority: *collateral_reserve_authority,
+            obligation,
+            obligation_owner: *obligation_owner,
+            debt_oracle: *debt_oracle,
+            collateral_oracle: *collateral_oracle,
+            liquidator_debt_token,
+            debt_vault: *debt_vault,
+            liquidator_collateral_token,
+            collateral_vault: *collateral_vault,
+            token_program: spl_token::id(),
+        }
+        .to_account_metas(None);
+        accounts.extend(extra_accounts);
+
         Instruction {
             program_id: program_id(),
-            accounts: klend::accounts::Liquidate {
-                liquidator: *liquidator,
-                lending_market: *lending_market,
-                debt_reserve: *debt_reserve,
-                collateral_reserve: *collateral_reserve,
-                collateral_reserve_authority: *collateral_reserve_authority,
-                obligation,
-                obligation_owner: *obligation_owner,
-                debt_oracle: *debt_oracle,
-                collateral_oracle: *collateral_oracle,
-                liquidator_debt_token,
-                debt_vault: *debt_vault,
-                liquidator_collateral_token,
-                collateral_vault: *collateral_vault,
-                token_program: spl_token::id(),
-            }
-            .to_account_metas(None),
+            accounts,
             data: klend::instruction::Liquidate { amount }.data(),
         }
+    }
+
+    /// Build remaining_accounts for health check: [(reserve, oracle), ...]
+    fn position_accounts(pairs: &[(&Pubkey, &Pubkey)]) -> Vec<AccountMeta> {
+        pairs
+            .iter()
+            .flat_map(|(reserve, oracle)| {
+                vec![
+                    AccountMeta::new_readonly(**reserve, false),
+                    AccountMeta::new_readonly(**oracle, false),
+                ]
+            })
+            .collect()
     }
 
     // ── Setup ────────────────────────────────────────────────────
@@ -759,6 +784,7 @@ mod tests {
             &env.sol_vault,
             &env.sol_oracle,
             withdraw_shares,
+            vec![], // no borrows, no remaining_accounts needed
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -847,6 +873,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -929,6 +956,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1004,6 +1032,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1104,6 +1133,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1199,6 +1229,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1323,6 +1354,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1449,6 +1481,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1496,6 +1529,7 @@ mod tests {
             &env.usdc_vault,
             &env.sol_vault,
             liquidate_amount,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1586,6 +1620,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1630,6 +1665,7 @@ mod tests {
             &env.usdc_vault,
             &env.sol_vault,
             too_much,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1707,6 +1743,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1738,6 +1775,7 @@ mod tests {
             &env.usdc_vault,
             &env.sol_vault,
             250_000_000,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -1976,6 +2014,7 @@ mod tests {
             &tiny_mint,
             &tiny_vault,
             20_000_000, // 20 tokens, cap is 10
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&tiny_reserve, &tiny_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -2054,6 +2093,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -2141,7 +2181,7 @@ mod tests {
             .iter()
             .find(|b| b.reserve == env.usdc_reserve)
             .unwrap();
-        let current_debt = borrow.current_debt(reserve.cumulative_borrow_index);
+        let current_debt = borrow.current_debt(reserve.cumulative_borrow_index).unwrap();
         let max_liquidate = current_debt / 2; // 50% close factor
         println!("Phase 5: Current debt: {}, max liquidation: {}", current_debt, max_liquidate);
 
@@ -2160,6 +2200,7 @@ mod tests {
             &env.usdc_vault,
             &env.sol_vault,
             max_liquidate,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],
@@ -2174,5 +2215,316 @@ mod tests {
         println!("Phase 5: Liquidator received {} SOL tokens", sol_received);
         assert!(sol_received > 0);
         println!("Full lifecycle test passed!");
+    }
+
+    // ========== SECURITY TESTS ==========
+
+    /// Helper: set up a user with SOL deposited and USDC borrowed.
+    /// Returns the user keypair. Borrow amount is near the 80% LTV limit.
+    fn setup_borrower(env: &mut TestEnv, sol_deposit: u64, usdc_borrow: u64) -> Keypair {
+        let user = Keypair::new();
+        fund_user(env, &user, sol_deposit, 0);
+        env.svm.expire_blockhash();
+        create_ata(&mut env.svm, &env.admin, &user.pubkey(), &env.usdc_mint);
+
+        // Seed USDC reserve with liquidity
+        env.svm.expire_blockhash();
+        let admin_usdc_ata = create_ata(&mut env.svm, &env.admin, &env.admin.pubkey(), &env.usdc_mint);
+        mint_tokens(&mut env.svm, &env.admin, &env.usdc_mint, &admin_usdc_ata, &env.mint_authority, 1_000_000_000_000);
+
+        refresh_both(env);
+        env.svm.expire_blockhash();
+        let ix = deposit_ix(
+            &env.admin.pubkey(),
+            &env.lending_market,
+            &env.usdc_reserve,
+            &env.usdc_mint,
+            &env.usdc_vault,
+            1_000_000_000_000,
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&env.admin.pubkey()),
+            &[&env.admin],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        // User deposits SOL
+        refresh_both(env);
+        env.svm.expire_blockhash();
+        let ix = deposit_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.sol_reserve,
+            &env.sol_mint,
+            &env.sol_vault,
+            sol_deposit,
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        // User borrows USDC
+        refresh_both(env);
+        env.svm.expire_blockhash();
+        let ix = borrow_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.usdc_reserve,
+            &env.usdc_reserve_authority,
+            &env.sol_reserve,
+            &env.usdc_oracle,
+            &env.sol_oracle,
+            &env.usdc_mint,
+            &env.usdc_vault,
+            usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        user
+    }
+
+    #[test]
+    fn test_19_withdraw_blocked_when_unhealthy() {
+        let mut env = setup();
+        // Deposit 10 SOL ($1000), borrow 750 USDC (near 80% LTV limit: $800 max)
+        let user = setup_borrower(&mut env, 10_000_000_000, 750_000_000);
+
+        // Try to withdraw 5 SOL -- would drop collateral to $500 * 85% = $425 < $750 debt
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        // Get user's deposit shares
+        let obligation_key = obligation_pda(&env.lending_market, &user.pubkey()).0;
+        let ob_data = env.svm.get_account(&obligation_key).unwrap();
+        let obligation: klend::state::Obligation =
+            anchor_lang::AccountDeserialize::try_deserialize(&mut &ob_data.data[..]).unwrap();
+        let deposit = obligation.deposits.iter().find(|d| d.reserve == env.sol_reserve).unwrap();
+        let withdraw_shares = deposit.shares / 2; // ~50% of collateral
+
+        let ix = withdraw_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.sol_reserve,
+            &env.sol_reserve_authority,
+            &env.sol_mint,
+            &env.sol_vault,
+            &env.sol_oracle,
+            withdraw_shares,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        let result = env.svm.send_transaction(tx);
+        assert!(result.is_err(), "Withdraw should be blocked: would make position unhealthy");
+        println!("test_19: Withdraw correctly blocked when it would make position unhealthy");
+    }
+
+    #[test]
+    fn test_20_withdraw_allowed_when_healthy() {
+        let mut env = setup();
+        // Deposit 10 SOL ($1000), borrow only 100 USDC (very safe)
+        let user = setup_borrower(&mut env, 10_000_000_000, 100_000_000);
+
+        // Withdraw 1 SOL (small) -- should succeed since position remains very healthy
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let obligation_key = obligation_pda(&env.lending_market, &user.pubkey()).0;
+        let ob_data = env.svm.get_account(&obligation_key).unwrap();
+        let obligation: klend::state::Obligation =
+            anchor_lang::AccountDeserialize::try_deserialize(&mut &ob_data.data[..]).unwrap();
+        let deposit = obligation.deposits.iter().find(|d| d.reserve == env.sol_reserve).unwrap();
+        let withdraw_shares = deposit.shares / 10; // ~10% of collateral
+
+        let ix = withdraw_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.sol_reserve,
+            &env.sol_reserve_authority,
+            &env.sol_mint,
+            &env.sol_vault,
+            &env.sol_oracle,
+            withdraw_shares,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+        println!("test_20: Withdraw allowed when position remains healthy");
+    }
+
+    #[test]
+    fn test_21_borrow_uses_ltv_not_threshold() {
+        let mut env = setup();
+        // Deposit 10 SOL ($1000). LTV = 80% → max borrow = $800. LiqThreshold = 85% → $850.
+        // Try to borrow $810: should FAIL with LTV but would have passed with liquidation_threshold.
+        let user = Keypair::new();
+        fund_user(&mut env, &user, 10_000_000_000, 0);
+        env.svm.expire_blockhash();
+        create_ata(&mut env.svm, &env.admin, &user.pubkey(), &env.usdc_mint);
+
+        // Seed USDC reserve
+        env.svm.expire_blockhash();
+        let admin_usdc_ata = create_ata(&mut env.svm, &env.admin, &env.admin.pubkey(), &env.usdc_mint);
+        mint_tokens(&mut env.svm, &env.admin, &env.usdc_mint, &admin_usdc_ata, &env.mint_authority, 1_000_000_000_000);
+
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let ix = deposit_ix(
+            &env.admin.pubkey(),
+            &env.lending_market,
+            &env.usdc_reserve,
+            &env.usdc_mint,
+            &env.usdc_vault,
+            1_000_000_000_000,
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&env.admin.pubkey()),
+            &[&env.admin],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        // User deposits SOL
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let ix = deposit_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.sol_reserve,
+            &env.sol_mint,
+            &env.sol_vault,
+            10_000_000_000,
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        // Try to borrow $810 — above 80% LTV ($800) but below 85% liquidation threshold ($850)
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let ix = borrow_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.usdc_reserve,
+            &env.usdc_reserve_authority,
+            &env.sol_reserve,
+            &env.usdc_oracle,
+            &env.sol_oracle,
+            &env.usdc_mint,
+            &env.usdc_vault,
+            810_000_000, // $810
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        let result = env.svm.send_transaction(tx);
+        assert!(result.is_err(), "Should reject borrow: above LTV (80%) even though below liquidation threshold (85%)");
+        println!("test_21: Borrow correctly uses LTV (80%) not liquidation threshold (85%)");
+    }
+
+    #[test]
+    fn test_22_missing_remaining_accounts_errors() {
+        let mut env = setup();
+        let user = Keypair::new();
+        fund_user(&mut env, &user, 10_000_000_000, 0);
+        env.svm.expire_blockhash();
+        create_ata(&mut env.svm, &env.admin, &user.pubkey(), &env.usdc_mint);
+
+        // Seed USDC reserve
+        env.svm.expire_blockhash();
+        let admin_usdc_ata = create_ata(&mut env.svm, &env.admin, &env.admin.pubkey(), &env.usdc_mint);
+        mint_tokens(&mut env.svm, &env.admin, &env.usdc_mint, &admin_usdc_ata, &env.mint_authority, 1_000_000_000_000);
+
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let ix = deposit_ix(
+            &env.admin.pubkey(),
+            &env.lending_market,
+            &env.usdc_reserve,
+            &env.usdc_mint,
+            &env.usdc_vault,
+            1_000_000_000_000,
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&env.admin.pubkey()),
+            &[&env.admin],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        // User deposits SOL
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let ix = deposit_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.sol_reserve,
+            &env.sol_mint,
+            &env.sol_vault,
+            10_000_000_000,
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        env.svm.send_transaction(tx).unwrap();
+
+        // Try to borrow with empty remaining_accounts — should fail
+        refresh_both(&mut env);
+        env.svm.expire_blockhash();
+        let ix = borrow_ix(
+            &user.pubkey(),
+            &env.lending_market,
+            &env.usdc_reserve,
+            &env.usdc_reserve_authority,
+            &env.sol_reserve,
+            &env.usdc_oracle,
+            &env.sol_oracle,
+            &env.usdc_mint,
+            &env.usdc_vault,
+            100_000_000,
+            vec![], // no remaining_accounts!
+        );
+        let tx = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&user.pubkey()),
+            &[&user],
+            env.svm.latest_blockhash(),
+        );
+        let result = env.svm.send_transaction(tx);
+        assert!(result.is_err(), "Borrow should fail with missing remaining_accounts");
+        println!("test_22: Missing remaining_accounts correctly rejected");
     }
 }

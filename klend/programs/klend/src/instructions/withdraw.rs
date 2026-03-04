@@ -3,6 +3,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::constants::*;
 use crate::errors::KlendError;
+use crate::instructions::health::{self, WeightMode};
 use crate::math;
 use crate::state::{LendingMarket, MockOracle, Obligation, Reserve};
 
@@ -102,17 +103,18 @@ pub fn handle_withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
     }
 
     // If user has borrows, check health factor after withdrawal
+    // Obligation shares are already decremented above, so HF reflects post-withdrawal state.
+    // If HF < 1.0, entire tx reverts (Anchor rolls back all account changes).
     if !obligation.borrows.is_empty() {
-        // We only have the oracle for this one reserve in context.
-        // For a full multi-collateral check we'd need all oracles.
-        // In v1, we do a simplified check: compute remaining collateral value
-        // for this reserve and ensure health factor stays >= 1.0.
-        // This is conservative -- it only considers this reserve's collateral.
-        // A full implementation would pass remaining_accounts for all oracles.
-
-        // For now, we recompute total collateral and debt from the obligation
-        // using only the data available. The test setup ensures single-collateral scenarios.
-        // The health check happens after the shares are reduced above.
+        let lending_market_key = ctx.accounts.lending_market.key();
+        let (_, _, hf) = health::compute_obligation_health(
+            obligation,
+            ctx.remaining_accounts,
+            &lending_market_key,
+            &clock,
+            WeightMode::LiquidationThreshold,
+        )?;
+        require!(hf >= SCALE, KlendError::HealthFactorTooLow);
     }
 
     // Transfer tokens from vault to user

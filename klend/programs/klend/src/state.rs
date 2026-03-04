@@ -100,22 +100,18 @@ pub struct ObligationBorrow {
 
 impl ObligationBorrow {
     /// Current debt given the latest borrow index
-    pub fn current_debt(&self, current_borrow_index: u128) -> u64 {
+    pub fn current_debt(&self, current_borrow_index: u128) -> Result<u64> {
         if current_borrow_index == 0 {
-            return 0;
+            return Ok(0);
         }
-        let debt = self
+        let product = self
             .borrowed_amount_scaled
             .checked_mul(current_borrow_index)
-            .unwrap_or(0)
-            / SCALE;
+            .ok_or(error!(crate::errors::KlendError::DebtOverflow))?;
+        let debt = product / SCALE;
         // Round up to favor protocol
-        let remainder = self
-            .borrowed_amount_scaled
-            .checked_mul(current_borrow_index)
-            .unwrap_or(0)
-            % SCALE;
+        let remainder = product % SCALE;
         let rounded = if remainder > 0 { debt + 1 } else { debt };
-        rounded as u64
+        Ok(rounded as u64)
     }
 }

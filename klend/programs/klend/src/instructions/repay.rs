@@ -69,7 +69,7 @@ pub fn handle_repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
         .ok_or(KlendError::NoBorrowFound)?;
 
     // Compute current debt
-    let current_debt = borrow.current_debt(borrow_index);
+    let current_debt = borrow.current_debt(borrow_index)?;
 
     // Cap repay at current debt
     let repay_amount = amount.min(current_debt);

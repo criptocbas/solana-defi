@@ -1,3 +1,4 @@
+pub mod health;
 pub mod init_market;
 pub mod init_mock_oracle;
 pub mod update_mock_oracle;

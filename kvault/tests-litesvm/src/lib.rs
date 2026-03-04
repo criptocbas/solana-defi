@@ -5,7 +5,7 @@ mod tests {
     use litesvm::LiteSVM;
     use solana_sdk::{
         clock::Clock,
-        instruction::Instruction,
+        instruction::{AccountMeta, Instruction},
         program_pack::Pack,
         pubkey::Pubkey,
         signature::{Keypair, Signer},
@@ -338,28 +338,44 @@ mod tests {
         borrow_mint: &Pubkey,
         borrow_vault: &Pubkey,
         amount: u64,
+        extra_accounts: Vec<AccountMeta>,
     ) -> Instruction {
         let (obligation, _) = obligation_pda(lending_market, user);
         let user_token_account = get_associated_token_address(user, borrow_mint);
+        let mut accounts = klend::accounts::Borrow {
+            user: *user,
+            lending_market: *lending_market,
+            borrow_reserve: *borrow_reserve,
+            borrow_reserve_authority: *borrow_reserve_authority,
+            collateral_reserve: *collateral_reserve,
+            obligation,
+            owner: *user,
+            borrow_oracle: *borrow_oracle,
+            collateral_oracle: *collateral_oracle,
+            user_token_account,
+            token_vault: *borrow_vault,
+            token_program: spl_token::id(),
+        }
+        .to_account_metas(None);
+        accounts.extend(extra_accounts);
         Instruction {
             program_id: klend_id(),
-            accounts: klend::accounts::Borrow {
-                user: *user,
-                lending_market: *lending_market,
-                borrow_reserve: *borrow_reserve,
-                borrow_reserve_authority: *borrow_reserve_authority,
-                collateral_reserve: *collateral_reserve,
-                obligation,
-                owner: *user,
-                borrow_oracle: *borrow_oracle,
-                collateral_oracle: *collateral_oracle,
-                user_token_account,
-                token_vault: *borrow_vault,
-                token_program: spl_token::id(),
-            }
-            .to_account_metas(None),
+            accounts,
             data: klend::instruction::Borrow { amount }.data(),
         }
+    }
+
+    /// Build remaining_accounts for klend health check: [(reserve, oracle), ...]
+    fn position_accounts(pairs: &[(&Pubkey, &Pubkey)]) -> Vec<AccountMeta> {
+        pairs
+            .iter()
+            .flat_map(|(reserve, oracle)| {
+                vec![
+                    AccountMeta::new_readonly(**reserve, false),
+                    AccountMeta::new_readonly(**oracle, false),
+                ]
+            })
+            .collect()
     }
 
     // ── kvault instruction builders ────────────────────────────
@@ -860,6 +876,7 @@ mod tests {
             &env.usdc_mint,
             &env.usdc_vault,
             usdc_borrow,
+            position_accounts(&[(&env.sol_reserve, &env.sol_oracle), (&env.usdc_reserve, &env.usdc_oracle)]),
         );
         let tx = Transaction::new_signed_with_payer(
             &[ix],

@@ -121,8 +121,16 @@ pub fn handle_deleverage(
         oracle: ctx.accounts.collateral_oracle.to_account_info(),
         token_program: ctx.accounts.token_program.to_account_info(),
     };
+    // Pass remaining_accounts for klend health check: [collateral_reserve, collateral_oracle, debt_reserve, debt_oracle]
+    let health_accounts = vec![
+        ctx.accounts.klend_collateral_reserve.to_account_info(),
+        ctx.accounts.collateral_oracle.to_account_info(),
+        ctx.accounts.klend_debt_reserve.to_account_info(),
+        ctx.accounts.debt_oracle.to_account_info(),
+    ];
     klend::cpi::withdraw(
-        CpiContext::new_with_signer(ctx.accounts.klend_program.to_account_info(), cpi_accounts, &signer_seeds),
+        CpiContext::new_with_signer(ctx.accounts.klend_program.to_account_info(), cpi_accounts, &signer_seeds)
+            .with_remaining_accounts(health_accounts),
         withdraw_klend_shares,
     )?;
 

@@ -50,4 +50,10 @@ pub enum KlendError {
     InsufficientLiquidity,
     #[msg("Oracle mint does not match reserve token mint")]
     InvalidOracle,
+    #[msg("Missing reserve+oracle accounts for obligation positions")]
+    MissingPositionAccounts,
+    #[msg("Debt computation overflow")]
+    DebtOverflow,
+    #[msg("Invalid reserve account (PDA mismatch)")]
+    InvalidReserveAccount,
 }

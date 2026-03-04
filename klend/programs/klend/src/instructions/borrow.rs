@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::constants::*;
 use crate::errors::KlendError;
-use crate::math;
+use crate::instructions::health::{self, WeightMode};
 use crate::state::{LendingMarket, MockOracle, Obligation, ObligationBorrow, Reserve};
 
 #[derive(Accounts)]
@@ -131,63 +131,47 @@ pub fn handle_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
         KlendError::InsufficientLiquidity
     );
 
-    // Compute collateral value
-    let obligation = &ctx.accounts.obligation;
-    let collateral_reserve_key = collateral_reserve.key();
-    let collateral_deposit = obligation
-        .deposits
-        .iter()
-        .find(|d| d.reserve == collateral_reserve_key)
-        .ok_or(KlendError::NoCollateralDeposit)?;
+    // Update obligation FIRST — add/update borrow entry so health check reflects new debt.
+    // If HF check fails, entire tx reverts (Anchor rolls back all account changes).
+    let obligation = &mut ctx.accounts.obligation;
+    let borrow_reserve_key = borrow_reserve.key();
+    let borrow_index = borrow_reserve.cumulative_borrow_index;
 
-    let collateral_underlying = math::shares_to_underlying(
-        collateral_deposit.shares,
-        collateral_reserve.total_shares,
-        collateral_reserve.total_assets(),
-    )?;
+    // Scale amount by current index: scaled = amount * SCALE / index
+    let scaled_amount = (amount as u128)
+        .checked_mul(SCALE)
+        .ok_or(KlendError::MathOverflow)?
+        / borrow_index;
 
-    let collateral_oracle = &ctx.accounts.collateral_oracle;
-    let collateral_value = math::collateral_value_usd(
-        collateral_underlying,
-        collateral_oracle.price,
-        collateral_oracle.decimals,
-    )?;
-    let weighted_collateral = math::weighted_collateral_value(
-        collateral_value,
-        collateral_reserve.config.liquidation_threshold,
-    )?;
-
-    // Compute existing debt value + new borrow
-    let borrow_oracle = &ctx.accounts.borrow_oracle;
-    let mut total_debt_value: u128 = 0;
-
-    // Existing borrows
-    for b in &obligation.borrows {
-        // For simplicity in v1, we use the borrow oracle for the borrow reserve
-        // and assume all borrows are from the same reserve
-        let current_debt = b.current_debt(borrow_reserve.cumulative_borrow_index);
-        let debt_val = math::collateral_value_usd(
-            current_debt,
-            borrow_oracle.price,
-            borrow_oracle.decimals,
-        )?;
-        total_debt_value = total_debt_value
-            .checked_add(debt_val)
+    if let Some(borrow) = obligation
+        .borrows
+        .iter_mut()
+        .find(|b| b.reserve == borrow_reserve_key)
+    {
+        borrow.borrowed_amount_scaled = borrow
+            .borrowed_amount_scaled
+            .checked_add(scaled_amount)
             .ok_or(KlendError::MathOverflow)?;
+    } else {
+        require!(
+            obligation.borrows.len() < MAX_BORROWS,
+            KlendError::MaxEntriesReached
+        );
+        obligation.borrows.push(ObligationBorrow {
+            reserve: borrow_reserve_key,
+            borrowed_amount_scaled: scaled_amount,
+        });
     }
 
-    // Add new borrow
-    let new_borrow_value = math::collateral_value_usd(
-        amount,
-        borrow_oracle.price,
-        borrow_oracle.decimals,
+    // Health factor check using LTV (not liquidation_threshold) across ALL positions
+    let lending_market_key = ctx.accounts.lending_market.key();
+    let (_, _, hf) = health::compute_obligation_health(
+        obligation,
+        ctx.remaining_accounts,
+        &lending_market_key,
+        &clock,
+        WeightMode::Ltv,
     )?;
-    total_debt_value = total_debt_value
-        .checked_add(new_borrow_value)
-        .ok_or(KlendError::MathOverflow)?;
-
-    // Health factor check
-    let hf = math::health_factor(weighted_collateral, total_debt_value)?;
     require!(hf >= SCALE, KlendError::HealthFactorTooLow);
 
     // Transfer tokens from vault to user
@@ -218,37 +202,6 @@ pub fn handle_borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
         .deposited_liquidity
         .checked_sub(amount)
         .ok_or(KlendError::MathUnderflow)?;
-
-    // Update obligation - add/update borrow entry
-    let obligation = &mut ctx.accounts.obligation;
-    let borrow_reserve_key = borrow_reserve.key();
-    let borrow_index = borrow_reserve.cumulative_borrow_index;
-
-    // Scale amount by current index: scaled = amount * SCALE / index
-    let scaled_amount = (amount as u128)
-        .checked_mul(SCALE)
-        .ok_or(KlendError::MathOverflow)?
-        / borrow_index;
-
-    if let Some(borrow) = obligation
-        .borrows
-        .iter_mut()
-        .find(|b| b.reserve == borrow_reserve_key)
-    {
-        borrow.borrowed_amount_scaled = borrow
-            .borrowed_amount_scaled
-            .checked_add(scaled_amount)
-            .ok_or(KlendError::MathOverflow)?;
-    } else {
-        require!(
-            obligation.borrows.len() < MAX_BORROWS,
-            KlendError::MaxEntriesReached
-        );
-        obligation.borrows.push(ObligationBorrow {
-            reserve: borrow_reserve_key,
-            borrowed_amount_scaled: scaled_amount,
-        });
-    }
 
     Ok(())
 }
