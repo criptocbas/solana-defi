@@ -1,0 +1,16 @@
+[package]
+name = "kagg-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+litesvm = "0.7"
+solana-sdk = "2"
+spl-token = "7"
+spl-associated-token-account = "6"
+kagg = { path = "../programs/kagg", features = ["no-entrypoint"] }
+cpamm = { path = "../../kpool/programs/cpamm", features = ["no-entrypoint"] }
+kclmm = { path = "../../kclmm/programs/kclmm", features = ["no-entrypoint"] }
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+anchor-spl = "0.32.1"

@@ -1,0 +1,10 @@
+[package]
+name = "kagg-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kclmm = { path = "../kclmm/programs/kclmm", features = ["no-entrypoint"] }
+kagg = { path = "../kagg/programs/kagg", features = ["no-entrypoint"] }
+anchor-lang = "0.32.1"
+solana-sdk = "2"
