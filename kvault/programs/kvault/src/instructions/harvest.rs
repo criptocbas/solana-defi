@@ -48,6 +48,7 @@ pub struct Harvest<'info> {
     #[account(
         mut,
         token::mint = vault.share_mint,
+        token::authority = vault.fee_recipient,
     )]
     pub fee_recipient_share_account: Account<'info, TokenAccount>,
 

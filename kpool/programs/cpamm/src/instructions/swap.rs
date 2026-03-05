@@ -112,6 +112,31 @@ pub fn handle_swap(ctx: Context<Swap>, amount_in: u64, minimum_amount_out: u64) 
         CpammError::SlippageExceededOutput
     );
 
+    // CEI: Update reserves before transfers
+    let pool_key = ctx.accounts.pool.key();
+    let authority_bump = ctx.accounts.pool.authority_bump;
+
+    let pool = &mut ctx.accounts.pool;
+    if is_a_to_b {
+        pool.reserve_a = pool
+            .reserve_a
+            .checked_add(amount_in)
+            .ok_or(CpammError::MathOverflow)?;
+        pool.reserve_b = pool
+            .reserve_b
+            .checked_sub(amount_out)
+            .ok_or(CpammError::MathOverflow)?;
+    } else {
+        pool.reserve_b = pool
+            .reserve_b
+            .checked_add(amount_in)
+            .ok_or(CpammError::MathOverflow)?;
+        pool.reserve_a = pool
+            .reserve_a
+            .checked_sub(amount_out)
+            .ok_or(CpammError::MathOverflow)?;
+    }
+
     // Transfer input from user to vault
     let (vault_in, vault_out) = if is_a_to_b {
         (
@@ -138,11 +163,10 @@ pub fn handle_swap(ctx: Context<Swap>, amount_in: u64, minimum_amount_out: u64) 
     )?;
 
     // Transfer output from vault to user (signed by pool_authority)
-    let pool_key = ctx.accounts.pool.key();
     let authority_seeds: &[&[u8]] = &[
         POOL_AUTHORITY_SEED,
         pool_key.as_ref(),
-        &[ctx.accounts.pool.authority_bump],
+        &[authority_bump],
     ];
 
     token::transfer(
@@ -157,28 +181,6 @@ pub fn handle_swap(ctx: Context<Swap>, amount_in: u64, minimum_amount_out: u64) 
         ),
         amount_out,
     )?;
-
-    // Update reserves
-    let pool = &mut ctx.accounts.pool;
-    if is_a_to_b {
-        pool.reserve_a = pool
-            .reserve_a
-            .checked_add(amount_in)
-            .ok_or(CpammError::MathOverflow)?;
-        pool.reserve_b = pool
-            .reserve_b
-            .checked_sub(amount_out)
-            .ok_or(CpammError::MathOverflow)?;
-    } else {
-        pool.reserve_b = pool
-            .reserve_b
-            .checked_add(amount_in)
-            .ok_or(CpammError::MathOverflow)?;
-        pool.reserve_a = pool
-            .reserve_a
-            .checked_sub(amount_out)
-            .ok_or(CpammError::MathOverflow)?;
-    }
 
     Ok(())
 }

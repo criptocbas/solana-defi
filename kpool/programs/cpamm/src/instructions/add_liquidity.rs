@@ -153,6 +153,20 @@ pub fn handle_add_liquidity(
         CpammError::SlippageExceededMint
     );
 
+    // CEI: Update reserves before transfers
+    let pool_key = ctx.accounts.pool.key();
+    let authority_bump = ctx.accounts.pool.authority_bump;
+
+    let pool = &mut ctx.accounts.pool;
+    pool.reserve_a = pool
+        .reserve_a
+        .checked_add(amount_a)
+        .ok_or(CpammError::MathOverflow)?;
+    pool.reserve_b = pool
+        .reserve_b
+        .checked_add(amount_b)
+        .ok_or(CpammError::MathOverflow)?;
+
     // Transfer tokens from user to vaults
     token::transfer(
         CpiContext::new(
@@ -179,11 +193,10 @@ pub fn handle_add_liquidity(
     )?;
 
     // Mint LP tokens
-    let pool_key = ctx.accounts.pool.key();
     let authority_seeds: &[&[u8]] = &[
         POOL_AUTHORITY_SEED,
         pool_key.as_ref(),
-        &[ctx.accounts.pool.authority_bump],
+        &[authority_bump],
     ];
 
     if total_supply == 0 {
@@ -215,17 +228,6 @@ pub fn handle_add_liquidity(
         ),
         lp_tokens_to_user,
     )?;
-
-    // Update reserves
-    let pool = &mut ctx.accounts.pool;
-    pool.reserve_a = pool
-        .reserve_a
-        .checked_add(amount_a)
-        .ok_or(CpammError::MathOverflow)?;
-    pool.reserve_b = pool
-        .reserve_b
-        .checked_add(amount_b)
-        .ok_or(CpammError::MathOverflow)?;
 
     Ok(())
 }

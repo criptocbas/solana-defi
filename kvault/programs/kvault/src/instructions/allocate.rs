@@ -57,6 +57,7 @@ pub struct Allocate<'info> {
 
 pub fn handle_allocate(ctx: Context<Allocate>, amount: u64) -> Result<()> {
     require!(amount > 0, KvaultError::ZeroAllocate);
+    require!(!ctx.accounts.vault.halted, KvaultError::VaultHalted);
     require!(
         amount <= ctx.accounts.vault_token_account.amount,
         KvaultError::InsufficientIdle

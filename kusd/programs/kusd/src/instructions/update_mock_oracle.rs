@@ -4,9 +4,12 @@ use crate::state::MockOracle;
 
 #[derive(Accounts)]
 pub struct UpdateMockOracle<'info> {
-    pub payer: Signer<'info>,
+    pub authority: Signer<'info>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        has_one = authority,
+    )]
     pub oracle: Account<'info, MockOracle>,
 }
 

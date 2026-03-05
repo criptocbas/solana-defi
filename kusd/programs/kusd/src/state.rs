@@ -63,6 +63,7 @@ impl CdpPosition {
 /// Mock oracle for collateral pricing
 #[account]
 pub struct MockOracle {
+    pub authority: Pubkey, // only this signer can update the price
     pub token_mint: Pubkey,
     pub price: u64,    // USD per token * 1e6
     pub decimals: u8,  // token decimals

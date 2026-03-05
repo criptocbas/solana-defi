@@ -105,6 +105,7 @@ pub fn handle_swap(
             pool.tick_spacing,
             a_to_b,
             pool.key(),
+            ctx.program_id,
         )?;
 
         let (next_tick, ta_idx, tick_idx_in_array) = match search_result {
@@ -250,6 +251,7 @@ fn find_next_tick_raw(
     tick_spacing: u16,
     a_to_b: bool,
     pool_key: Pubkey,
+    program_id: &Pubkey,
 ) -> Result<Option<(i32, usize, usize)>> {
     let spacing_i32 = tick_spacing as i32;
 
@@ -265,6 +267,16 @@ fn find_next_tick_raw(
         require!(ta_pool == pool_key, KclmmError::TickArrayPoolMismatch);
 
         let start_tick = i32::from_le_bytes(data[TA_START_TICK_OFFSET..TA_START_TICK_OFFSET + 4].try_into().unwrap());
+
+        // Validate PDA derivation to prevent forged tick arrays
+        let (expected_pda, _) = Pubkey::find_program_address(
+            &[TICK_ARRAY_SEED, pool_key.as_ref(), &start_tick.to_le_bytes()],
+            program_id,
+        );
+        require!(
+            *accounts[*array_idx].key == expected_pda,
+            KclmmError::TickArrayPoolMismatch
+        );
         let bitmap = u64::from_le_bytes(data[TA_BITMAP_OFFSET..TA_BITMAP_OFFSET + 8].try_into().unwrap());
 
         // Search bitmap for next initialized tick

@@ -93,6 +93,20 @@ pub fn handle_remove_liquidity(
     require!(amount_a >= min_amount_a, CpammError::SlippageExceededAmountA);
     require!(amount_b >= min_amount_b, CpammError::SlippageExceededAmountB);
 
+    // CEI: Update reserves before transfers
+    let pool_key = ctx.accounts.pool.key();
+    let authority_bump = ctx.accounts.pool.authority_bump;
+
+    let pool = &mut ctx.accounts.pool;
+    pool.reserve_a = pool
+        .reserve_a
+        .checked_sub(amount_a)
+        .ok_or(CpammError::MathOverflow)?;
+    pool.reserve_b = pool
+        .reserve_b
+        .checked_sub(amount_b)
+        .ok_or(CpammError::MathOverflow)?;
+
     // Burn user's LP tokens
     token::burn(
         CpiContext::new(
@@ -107,11 +121,10 @@ pub fn handle_remove_liquidity(
     )?;
 
     // Transfer tokens from vaults to user (signed by pool_authority)
-    let pool_key = ctx.accounts.pool.key();
     let authority_seeds: &[&[u8]] = &[
         POOL_AUTHORITY_SEED,
         pool_key.as_ref(),
-        &[ctx.accounts.pool.authority_bump],
+        &[authority_bump],
     ];
 
     token::transfer(
@@ -139,17 +152,6 @@ pub fn handle_remove_liquidity(
         ),
         amount_b,
     )?;
-
-    // Update reserves
-    let pool = &mut ctx.accounts.pool;
-    pool.reserve_a = pool
-        .reserve_a
-        .checked_sub(amount_a)
-        .ok_or(CpammError::MathOverflow)?;
-    pool.reserve_b = pool
-        .reserve_b
-        .checked_sub(amount_b)
-        .ok_or(CpammError::MathOverflow)?;
 
     Ok(())
 }

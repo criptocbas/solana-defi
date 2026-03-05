@@ -14,7 +14,7 @@ pub struct InitMockOracle<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + 32 + 8 + 1 + 8 + 1,
+        space = 8 + 32 + 32 + 8 + 1 + 8 + 1,
         seeds = [MOCK_ORACLE_SEED, token_mint.key().as_ref()],
         bump,
     )]
@@ -29,6 +29,7 @@ pub fn handle_init_mock_oracle(
     decimals: u8,
 ) -> Result<()> {
     let oracle = &mut ctx.accounts.oracle;
+    oracle.authority = ctx.accounts.payer.key();
     oracle.token_mint = ctx.accounts.token_mint.key();
     oracle.price = price;
     oracle.decimals = decimals;

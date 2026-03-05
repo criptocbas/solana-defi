@@ -74,6 +74,7 @@ pub fn handle_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 
     let supply = ctx.accounts.share_mint.supply;
     let shares = math::amount_to_shares(amount, supply, total_assets)?;
+    require!(shares > 0, KvaultError::ZeroShares);
 
     // Transfer underlying from user to vault
     let cpi_accounts = Transfer {

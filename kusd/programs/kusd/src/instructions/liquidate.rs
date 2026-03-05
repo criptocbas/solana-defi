@@ -97,11 +97,14 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
     let hf = math::health_factor(coll_usd, current_debt as u128, vault.liquidation_threshold_bps)?;
     require!(hf < SCALE, KusdError::PositionHealthy);
 
-    // Close factor: max 50% of debt per liquidation
-    let max_repay = (current_debt as u128)
-        .checked_mul(CLOSE_FACTOR_BPS as u128)
-        .ok_or(KusdError::MathOverflow)?
-        / (BPS_SCALE as u128);
+    // Close factor: max 50% of debt per liquidation (at least 1 unit to allow dust liquidation)
+    let max_repay = std::cmp::max(
+        1u128,
+        (current_debt as u128)
+            .checked_mul(CLOSE_FACTOR_BPS as u128)
+            .ok_or(KusdError::MathOverflow)?
+            / (BPS_SCALE as u128),
+    );
     require!(repay_amount as u128 <= max_repay, KusdError::CloseFactorExceeded);
 
     let actual_repay = repay_amount.min(current_debt);
@@ -161,9 +164,13 @@ pub fn handle_liquidate(ctx: Context<Liquidate>, repay_amount: u64) -> Result<()
 
     position.collateral_amount = position
         .collateral_amount
-        .saturating_sub(collateral_seized);
+        .checked_sub(collateral_seized)
+        .ok_or(KusdError::MathUnderflow)?;
 
-    vault.total_collateral = vault.total_collateral.saturating_sub(collateral_seized);
+    vault.total_collateral = vault
+        .total_collateral
+        .checked_sub(collateral_seized)
+        .ok_or(KusdError::MathUnderflow)?;
 
     Ok(())
 }

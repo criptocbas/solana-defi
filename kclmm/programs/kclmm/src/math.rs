@@ -31,15 +31,12 @@ pub fn mul_u128(a: u128, b: u128) -> (u128, u128) {
 /// 256÷128 → 128-bit divide. Requires result fits in u128.
 /// (hi, lo) / d
 pub fn div_u256_by_u128(hi: u128, lo: u128, d: u128) -> u128 {
-    if d == 0 {
-        panic!("div by zero");
-    }
+    assert!(d != 0, "div by zero");
     if hi == 0 {
         return lo / d;
     }
 
     // For our use cases, the result must fit in u128.
-    // If hi >= d, then (hi * 2^128 + lo) / d >= 2^128, which overflows.
     let q_hi = hi / d;
     let r_hi = hi % d;
     assert!(q_hi == 0, "u256 div overflow");
@@ -78,9 +75,7 @@ pub fn q64_mul(a: u128, b: u128) -> u128 {
 
 /// Q64 ÷ Q64 → Q64 (truncates / rounds down)
 pub fn q64_div(a: u128, b: u128) -> u128 {
-    if b == 0 {
-        panic!("q64 div by zero");
-    }
+    assert!(b != 0, "q64 div by zero");
     // a / b in Q64 = (a << 64) / b
     let (hi, lo) = (a >> 64, a << 64);
     div_u256_by_u128(hi, lo, b)

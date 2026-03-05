@@ -555,7 +555,7 @@ mod tests {
         let ix = Instruction {
             program_id: program_id(),
             accounts: kusd::accounts::UpdateMockOracle {
-                payer: env.admin.pubkey(),
+                authority: env.admin.pubkey(),
                 oracle: env.oracle,
             }
             .to_account_metas(None),

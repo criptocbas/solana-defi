@@ -58,6 +58,7 @@ pub fn handle_withdraw_collateral(ctx: Context<WithdrawCollateral>, amount: u64)
     require!(amount > 0, KusdError::ZeroWithdraw);
 
     let vault = &mut ctx.accounts.vault;
+    require!(!vault.halted, KusdError::VaultHalted);
 
     // Accrue fees
     let clock = Clock::get()?;
@@ -110,11 +111,17 @@ pub fn handle_withdraw_collateral(ctx: Context<WithdrawCollateral>, amount: u64)
 
     // Update position
     let position = &mut ctx.accounts.position;
-    position.collateral_amount = position.collateral_amount.saturating_sub(amount);
+    position.collateral_amount = position
+        .collateral_amount
+        .checked_sub(amount)
+        .ok_or(KusdError::MathUnderflow)?;
 
     // Update vault totals
     let vault = &mut ctx.accounts.vault;
-    vault.total_collateral = vault.total_collateral.saturating_sub(amount);
+    vault.total_collateral = vault
+        .total_collateral
+        .checked_sub(amount)
+        .ok_or(KusdError::MathUnderflow)?;
 
     Ok(())
 }

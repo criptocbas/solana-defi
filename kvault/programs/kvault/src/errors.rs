@@ -32,4 +32,6 @@ pub enum KvaultError {
     NoYield,
     #[msg("Invalid klend program")]
     InvalidKlendProgram,
+    #[msg("Deposit would mint zero shares")]
+    ZeroShares,
 }
